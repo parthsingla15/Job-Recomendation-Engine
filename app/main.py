@@ -61,7 +61,35 @@ def _weights_from_query(
         location=weight_location if weight_location is not None else DEFAULT_WEIGHTS.location,
         salary=weight_salary if weight_salary is not None else DEFAULT_WEIGHTS.salary,
     )
+@app.get("/jobs/{job_id}/recommendations")
+def recommend_candidates_for_job(
+    job_id: str,
+    limit: Optional[int] = Query(default=None, gt=0),
+    weight_skills: Optional[float] = None,
+    weight_experience: Optional[float] = None,
+    weight_location: Optional[float] = None,
+    weight_salary: Optional[float] = None,
+):
+    job = store.get_job(job_id)
+    if not job:
+        raise HTTPException(404, "job not found")
 
+    weights = _weights_from_query(weight_skills, weight_experience, weight_location, weight_salary)
+
+    results = []
+    for candidate in store.list_candidates():
+        result = score_candidate_job(candidate, job, weights)
+        if result.excluded:
+            continue
+        results.append({
+            "candidate_id": candidate.id,
+            "name": candidate.name,
+            "overall_score": result.overall_score,
+            "breakdown": result.breakdown,
+        })
+
+    results.sort(key=lambda r: r["overall_score"], reverse=True)
+    return results[:limit] if limit else results
 
 @app.get("/candidates/{candidate_id}/recommendations")
 def recommend_jobs_for_candidate(
